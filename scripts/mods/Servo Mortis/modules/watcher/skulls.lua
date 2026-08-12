@@ -76,6 +76,22 @@ function Skulls.measure_camera_distance()
 	return distance
 end
 
+function Skulls.measured_unit()
+	local player_manager = Managers and Managers.player
+	if not player_manager or not player_manager.local_player_safe then
+		return nil
+	end
+
+	local player = player_manager:local_player_safe(1)
+	local camera_handler = player and player.camera_handler
+	local followed_unit = camera_handler and camera_handler._camera_follow_unit
+	if not followed_unit or not ALIVE[followed_unit] then
+		return nil
+	end
+
+	return followed_unit
+end
+
 function Skulls.orbit_radius()
 	return Skulls.radius_from_distance(Skulls.measure_camera_distance())
 end

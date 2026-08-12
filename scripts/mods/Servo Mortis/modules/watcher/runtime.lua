@@ -190,6 +190,24 @@ function Runtime.despawn_all(live, Nameplate)
 	end
 end
 
+function Runtime.radius_for(base_radius, measured_height, target_height)
+	if type(base_radius) ~= "number" or base_radius <= 0 then
+		return base_radius
+	end
+
+	local from = HUMAN_BODY_HEIGHT
+	if type(measured_height) == "number" and measured_height > 0 then
+		from = measured_height
+	end
+
+	local to = HUMAN_BODY_HEIGHT
+	if type(target_height) == "number" and target_height > 0 then
+		to = target_height
+	end
+
+	return base_radius * (to / from)
+end
+
 function Runtime.orbit_height_for(body_height)
 	if type(body_height) ~= "number" or body_height <= 0 then
 		return ORBIT_HEIGHT
@@ -394,11 +412,12 @@ local function desired_offset(entry, previous_mode, ctx, dt, radius, orbit_heigh
 	return Placement.orbit_offset(entry.slot, ctx.time, radius, orbit_height, entry.orbit_phase)
 end
 
-local function place_entry(entry, account_id, target_unit, radius, dt, ctx)
+local function place_entry(entry, account_id, target_unit, base_radius, measured_height, dt, ctx)
 	local Placement, Nameplate = ctx.Placement, ctx.Nameplate
 
-	local orbit_height = Runtime.orbit_height_for(
-		ctx.body_height_for and ctx.body_height_for(target_unit))
+	local body_height = ctx.body_height_for and ctx.body_height_for(target_unit)
+	local orbit_height = Runtime.orbit_height_for(body_height)
+	local radius = Runtime.radius_for(base_radius, measured_height, body_height)
 	local base = Unit.world_position(target_unit, 1)
 	local fwd = Quaternion.forward(Unit.world_rotation(target_unit, 1))
 	local vel = ctx.velocity_for and ctx.velocity_for(target_unit) or Vector3(0, 0, 0)
@@ -496,7 +515,9 @@ function Runtime.update(dt, ctx)
 		return
 	end
 
-	local radius = Skulls.orbit_radius()
+	local base_radius = Skulls.orbit_radius()
+	local measured_unit = Skulls.measured_unit and Skulls.measured_unit()
+	local measured_height = measured_unit and ctx.body_height_for and ctx.body_height_for(measured_unit)
 
 	ctx.time = (ctx.time or 0) + dt
 
@@ -512,7 +533,7 @@ function Runtime.update(dt, ctx)
 			local entry = ensure_entry(live, watcher, target_unit, slot, spawner, Skulls)
 
 			if entry and entry.unit and Unit.alive(entry.unit) then
-				place_entry(entry, account_id, target_unit, radius, dt, ctx)
+				place_entry(entry, account_id, target_unit, base_radius, measured_height, dt, ctx)
 			end
 		end
 	end

@@ -1,12 +1,12 @@
 --[[
 	Name: Servo Mortis
 	Author: Wobin
-	Date: 06/08/2026
-	Version: 1.0.0
+	Date: 12/08/2026
+	Version: 1.1.0
 ]]--
 
 local mod = get_mod("Servo Mortis")
-mod.version = "1.0.0"
+mod.version = "1.1.0"
 
 local Settings = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/settings")
 local FollowTargets = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/follow_targets")
@@ -152,6 +152,8 @@ mod.update = function(dt)
 		mod.spectate_previous()
 	end
 
+	CameraMode.cooperate(CameraMode.spectating(mod, Settings))
+
 	Presence.set_watching(local_watching_account())
 
 	local values = Settings.values
@@ -198,6 +200,8 @@ mod.on_disabled = function()
 	CameraMode.apply(CameraMode.live_handler(), { values = { third_person_spectate = false } })
 	Runtime.despawn_all(watcher_ctx.live, Nameplate)
 	TestMode.reset()
+	CameraMode.cooperate(false)
+	CameraMode._reset_cooperation()
 	SpectateControls.forget_hint()
 	SpectateControls.restore_hint()
 	Presence.uninstall()
@@ -215,6 +219,8 @@ mod.on_unload = function()
 	CameraMode.apply(CameraMode.live_handler(), { values = { third_person_spectate = false } })
 	Runtime.despawn_all(watcher_ctx.live, Nameplate)
 	TestMode.reset()
+	CameraMode.cooperate(false)
+	CameraMode._reset_cooperation()
 	SpectateControls.forget_hint()
 	SpectateControls.restore_hint()
 	Presence.uninstall()

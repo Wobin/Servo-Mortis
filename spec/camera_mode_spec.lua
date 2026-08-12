@@ -202,4 +202,130 @@ return function()
 		t.eq(handler._first_person_spectating_mode, false,
 			"an enabled mod must apply the live setting")
 	end)
+
+	t.suite("Camera mode: cooperating with Perspectives")
+
+	local function fake_perspectives(log)
+		return {
+			autoswitch = function(reason, to_3p, stack)
+				log[#log + 1] = "push:" .. tostring(reason) .. ":" .. tostring(to_3p) .. ":" .. tostring(stack)
+			end,
+			clear_reason = function(reason) log[#log + 1] = "clear:" .. tostring(reason) end,
+		}
+	end
+
+	local function with_perspectives(mod_table, body)
+		local saved = _G.get_mod
+		_G.get_mod = function(name)
+			if name == "Perspectives" then return mod_table end
+			return saved and saved(name) or nil
+		end
+		CameraMode._reset_cooperation()
+		local ok, err = pcall(body)
+		_G.get_mod = saved
+		CameraMode._reset_cooperation()
+		if not ok then error(err, 0) end
+	end
+
+	t.it("pushes a reason onto the stack when spectating starts", function()
+		local log = {}
+		with_perspectives(fake_perspectives(log), function()
+			CameraMode.cooperate(true)
+		end)
+		t.eq(log[1], "push:" .. CameraMode.PERSPECTIVES_REASON .. ":true:true",
+			"it must push onto the stack, which is what makes Perspectives request third person")
+	end)
+
+	t.it("clears the reason when spectating ends", function()
+		local log = {}
+		with_perspectives(fake_perspectives(log), function()
+			CameraMode.cooperate(true)
+			CameraMode.cooperate(false)
+		end)
+		t.eq(log[2], "clear:" .. CameraMode.PERSPECTIVES_REASON,
+			"leaving it pushed would strand Perspectives in third person")
+	end)
+
+	t.it("does not touch the stack every frame while nothing changes", function()
+		local log = {}
+		with_perspectives(fake_perspectives(log), function()
+			for _ = 1, 50 do CameraMode.cooperate(true) end
+		end)
+		t.eq(#log, 1, "the stack must only be touched on a transition")
+	end)
+
+	t.it("does not query the third person state while we are not spectating", function()
+		local queries = 0
+		local p = fake_perspectives({})
+		p.is_requesting_third_person = function() queries = queries + 1 return false end
+
+		CameraMode._reset_cooperation()
+		with_perspectives(p, function()
+			for _ = 1, 50 do CameraMode.cooperate(false) end
+		end)
+
+		t.eq(queries, 0, "cooperation_action only reads is_active on the wants-third-person "
+			.. "branch, so querying it while alive is a per-frame pcall for a discarded value")
+	end)
+
+	t.it("still queries it while spectating, which is where the self-heal depends on it", function()
+		local queries = 0
+		local p = fake_perspectives({})
+		p.is_requesting_third_person = function() queries = queries + 1 return true end
+
+		CameraMode._reset_cooperation()
+		with_perspectives(p, function()
+			CameraMode.cooperate(true)
+			CameraMode.cooperate(true)
+		end)
+
+		t.truthy(queries > 0, "without the query a wiped switch_stack would never be re-asserted")
+	end)
+
+	t.it("reports failure when Perspectives is absent so our own hook still runs", function()
+		with_perspectives(nil, function()
+			t.falsy(CameraMode.cooperate(true), "without Perspectives there is nothing to cooperate with")
+		end)
+	end)
+
+	t.it("an incomplete Perspectives api is refused rather than half driven", function()
+		with_perspectives({ autoswitch = function() end }, function()
+			t.falsy(CameraMode.cooperate(true), "a mod missing clear_reason could never be released")
+		end)
+	end)
+
+	t.it("the transition decision is by state change, not by value", function()
+		t.eq(CameraMode.cooperation_action(nil, true), "push", "first request pushes")
+		t.eq(CameraMode.cooperation_action(true, true), "none", "holding is a no-op")
+		t.eq(CameraMode.cooperation_action(true, false), "clear", "stopping clears")
+		t.eq(CameraMode.cooperation_action(false, false), "none", "staying stopped is a no-op")
+	end)
+
+	t.it("re-asserts when Perspectives drops the reason while we still want it", function()
+		t.eq(CameraMode.cooperation_action(true, true, false), "push",
+			"spectating yourself makes Perspectives clear the reason; an edge-triggered push "
+			.. "never recovers and the camera stays locked inside the body")
+	end)
+
+	t.it("stays quiet while Perspectives is honouring the request", function()
+		t.eq(CameraMode.cooperation_action(true, true, true), "none",
+			"re-pushing every frame would fight Perspectives' own stack")
+	end)
+
+	t.it("does not re-push when the request state cannot be read", function()
+		t.eq(CameraMode.cooperation_action(true, true, nil), "none",
+			"an unknown state must not be treated as a drop")
+	end)
+
+	t.it("still pushes the first time even when reported inactive", function()
+		t.eq(CameraMode.cooperation_action(nil, true, false), "push",
+			"the opening request must survive the new guard")
+	end)
+
+	t.it("an inactive report never resurrects a released camera", function()
+		t.eq(CameraMode.cooperation_action(false, false, false), "none",
+			"not wanting third person outranks any activity reading")
+		t.eq(CameraMode.cooperation_action(true, false, true), "clear",
+			"leaving spectate clears even while Perspectives still reports active")
+	end)
 end

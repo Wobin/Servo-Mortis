@@ -1,4 +1,5 @@
 local t = require("spec.runner")
+local engine = require("spec.mock_engine")
 
 local Controls = dofile("./scripts/mods/Servo Mortis/modules/spectate_controls.lua")
 
@@ -60,6 +61,167 @@ t.suite("Spectate controls: previous input")
 	t.it("a device missing its query functions is gated", function()
 		t.falsy(Controls.previous_pressed({}, {}),
 			"a device without button_index or pressed must not be queried at all")
+	end)
+
+	t.suite("Spectate controls: button labels")
+
+	t.it("falls back to the raw name when the locale name is an EMPTY string", function()
+		t.eq(Controls.button_label("", "right", "mouse"), "RMB",
+			"Darktide returns '' (not nil) from button_locale_name for every mouse button, "
+			.. "so a plain `locale or raw` fallback never fires and the glyph renders blank")
+	end)
+
+	t.it("labels every mouse button the spectate controls actually use", function()
+		t.eq(Controls.button_label("", "left", "mouse"), "LMB", "spectate_next is bound to mouse_left")
+		t.eq(Controls.button_label("", "extra_1", "mouse"), "Mouse 4", "crouch can sit on a side button")
+	end)
+
+	t.it("keeps a real locale name when the engine supplies one", function()
+		t.eq(Controls.button_label("Space", "space", "keyboard"), "[SPACE]",
+			"keyboard keys already resolve, and must keep vanilla's bracketed uppercase form")
+	end)
+
+	t.it("never returns an empty string, which is what caused the blank caption", function()
+		for _, case in ipairs({ {"", "right", "mouse"}, {"", "space", "keyboard"} }) do
+			local label = Controls.button_label(case[1], case[2], case[3])
+			t.truthy(label and label ~= "", "a resolvable button must never render as nothing")
+		end
+	end)
+
+	t.it("reports nil when there is genuinely no name, rather than inventing one", function()
+		t.falsy(Controls.button_label("", "", "mouse"), "no name at all must be nil, not \"\"")
+		t.falsy(Controls.button_label(nil, nil, "mouse"), "nor when both are absent")
+	end)
+
+	t.suite("Spectate controls: caption cache invalidation")
+
+	t.it("does not cache a failed build, so a later frame can recover", function()
+		Controls.forget_hint()
+		local real = Controls.build_hint
+		local answers = { nil, "recovered" }
+		local call = 0
+		Controls.build_hint = function()
+			call = call + 1
+			return answers[call]
+		end
+
+		local first = Controls.hint_for(nil, false)
+		local second = Controls.hint_for(nil, false)
+		Controls.build_hint = real
+		Controls.forget_hint()
+
+		t.falsy(first, "the first build genuinely failed")
+		t.eq(second, "recovered", "caching the failure would blank the caption for the whole "
+			.. "session, since nothing else invalidates it until the mod is toggled")
+	end)
+
+	t.it("still caches a successful build", function()
+		Controls.forget_hint()
+		local real = Controls.build_hint
+		local builds = 0
+		Controls.build_hint = function() builds = builds + 1 return "text" end
+
+		Controls.hint_for(nil, false)
+		Controls.hint_for(nil, false)
+		Controls.hint_for(nil, false)
+		Controls.build_hint = real
+		Controls.forget_hint()
+
+		t.eq(builds, 1, "a working caption must not be rebuilt every frame")
+	end)
+
+	t.it("install hooks the input-changed event so a rebind refreshes the glyph", function()
+		Controls._reset_install()
+		local mod = engine.install({})
+		Controls.install(mod)
+		t.truthy(mod:find_hook("event_on_input_changed"),
+			"rebinding spectate_next mid-session leaves a stale glyph otherwise")
+		Controls._reset_install()
+	end)
+
+	t.suite("Spectate controls: revealing a suppressed caption")
+
+	t.it("re-enables a pass another mod switched off", function()
+		local style = { style_id_1 = { visible = false, font_size = 24 } }
+		t.eq(Controls.reveal_passes(style), 1, "one hidden pass must be revealed")
+		t.truthy(style.style_id_1.visible, "RingHud sets cycle_text.style_id_1 = false, which is "
+			.. "why the caption never rendered")
+	end)
+
+	t.it("leaves an untouched pass alone", function()
+		local style = { style_id_1 = { font_size = 24 } }
+		t.eq(Controls.reveal_passes(style), 0, "a pass with no explicit visible flag is already drawn")
+		t.falsy(style.style_id_1.visible, "and must not be given one needlessly")
+	end)
+
+	t.it("does not disturb a pass that is already visible", function()
+		local style = { style_id_1 = { visible = true } }
+		t.eq(Controls.reveal_passes(style), 0, "nothing to do means no reported change")
+	end)
+
+	t.it("survives a style table holding non-table values", function()
+		local style = { style_id_1 = { visible = false }, font_type = "machine_medium", size = 12 }
+		t.eq(Controls.reveal_passes(style), 1, "scalar style entries must be skipped, not indexed")
+	end)
+
+	t.it("refuses a missing style rather than throwing in the HUD", function()
+		t.eq(Controls.reveal_passes(nil), 0, "a widget without a style must not crash the draw path")
+	end)
+
+	t.suite("Spectate controls: icon-font glyphs")
+
+	local MOUSE_RIGHT_GLYPH = string.char(238, 129, 164)
+
+	t.it("passes an icon-font glyph through untouched", function()
+		t.eq(Controls.button_label(MOUSE_RIGHT_GLYPH, "right", "mouse"), MOUSE_RIGHT_GLYPH,
+			"U+E064 is the mouse-button icon and renders correctly once the pass is visible; "
+			.. "the earlier blank caption was RingHud hiding cycle_text, not a bad glyph")
+	end)
+
+	t.it("does not uppercase or bracket a non-keyboard glyph", function()
+		local label = Controls.button_label(MOUSE_RIGHT_GLYPH, "right", "mouse")
+		t.falsy(label:find("[", 1, true), "bracketing is the keyboard convention only")
+	end)
+
+	t.it("still falls back to the raw name when there is genuinely no locale name", function()
+		t.eq(Controls.button_label("", "right", "mouse"), "RMB",
+			"an empty locale name must not render as nothing")
+		t.eq(Controls.button_label(nil, "extra_1", "mouse"), "Mouse 4",
+			"nor an absent one")
+	end)
+
+	t.it("keeps vanilla's bracketed uppercase form for keyboard keys", function()
+		t.eq(Controls.button_label("Space", "space", "keyboard"), "[SPACE]",
+			"keyboard names are words and keep their vanilla presentation")
+	end)
+
+	t.suite("Spectate controls: modifier composition")
+
+	local function labeller(map)
+		return function(name) return map[name] end
+	end
+
+	t.it("an EMPTY enabler list leaves the key untouched", function()
+		t.eq(Controls.compose_keystring("RMB", {}, {}, labeller({})), "RMB",
+			"Darktide supplies empty enabler/disabler tables on ordinary binds, and bailing "
+			.. "on their mere presence is what blanked the caption")
+	end)
+
+	t.it("a nil enabler list is treated the same as an empty one", function()
+		t.eq(Controls.compose_keystring("RMB", nil, nil, labeller({})), "RMB",
+			"absent modifiers must not discard the key")
+	end)
+
+	t.it("real modifiers compose in vanilla's order and separators", function()
+		local map = { keyboard_leftshift = "[SHIFT]", keyboard_leftalt = "[ALT]" }
+		t.eq(Controls.compose_keystring("RMB", { "keyboard_leftshift" }, { "keyboard_leftalt" },
+			labeller(map)), "[SHIFT]+RMB-[ALT]",
+			"enablers prefix with + and disablers suffix with -, as input_utils does")
+	end)
+
+	t.it("an unresolvable modifier fails the whole binding rather than lying about it", function()
+		t.falsy(Controls.compose_keystring("RMB", { "keyboard_unknown" }, nil, labeller({})),
+			"showing a bare RMB when the real bind is SHIFT+RMB would misinform the player")
 	end)
 
 	t.suite("Spectate controls: caption")
@@ -197,7 +359,7 @@ t.suite("Spectate controls: previous input")
 		end
 	end)
 
-	t.it("a caption that cannot be built is not retried every frame", function()
+	t.it("a caption that cannot be built gives up after a bounded number of retries", function()
 		Controls.forget_hint()
 		local attempts = 0
 		local real = Controls.build_hint
@@ -210,6 +372,56 @@ t.suite("Spectate controls: previous input")
 		Controls.build_hint = real
 		Controls.forget_hint()
 
-		t.eq(attempts, 1, "a permanent failure must not cost a full rebuild every frame")
+		t.eq(attempts, Controls.MAX_HINT_ATTEMPTS,
+			"a permanent failure must not cost a full rebuild every frame, but a few retries "
+			.. "are needed so a transient one on the first spectator frame can recover")
+	end)
+
+	t.suite("Spectate controls: finding the spectator element")
+
+	local function with_ui(ui, body)
+		local saved = _G.Managers.ui
+		_G.Managers.ui = ui
+		local ok, err = pcall(body)
+		_G.Managers.ui = saved
+		if not ok then error(err, 0) end
+	end
+
+	local function fake_hud(has_element)
+		return {
+			element = function(_, name)
+				if has_element and name == "HudElementSpectatorText" then
+					return { name = name }
+				end
+				return nil
+			end,
+		}
+	end
+
+	t.it("finds the element on the spectator hud, which is a separate hud", function()
+		with_ui({ _spectator_hud = fake_hud(true), _hud = fake_hud(false) }, function()
+			t.truthy(Controls.spectator_element(),
+				"the spectator text lives on _spectator_hud, not the main _hud")
+		end)
+	end)
+
+	t.it("still finds it on the main hud when there is no spectator hud", function()
+		with_ui({ _hud = fake_hud(true) }, function()
+			t.truthy(Controls.spectator_element(), "the main hud must remain a fallback")
+		end)
+	end)
+
+	t.it("returns nothing when neither hud has it", function()
+		with_ui({ _spectator_hud = fake_hud(false), _hud = fake_hud(false) }, function()
+			t.falsy(Controls.spectator_element(), "no element means no element")
+		end)
+	end)
+
+	t.it("tolerates the ui manager being absent entirely", function()
+		with_ui(nil, function()
+			local ok, result = pcall(Controls.spectator_element)
+			t.truthy(ok, "outside a mission this must not throw")
+			t.falsy(result, "and must find nothing")
+		end)
 	end)
 end

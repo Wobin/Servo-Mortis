@@ -51,6 +51,84 @@ local function should_use_third_person(mod, Settings, self)
 	return handler._camera_follow_unit == self._unit
 end
 
+CameraMode.PERSPECTIVES_REASON = "servo_mortis_spectate"
+
+local perspectives_state = nil
+
+function CameraMode._reset_cooperation()
+	perspectives_state = nil
+end
+
+function CameraMode.cooperation_action(previous, wants_third_person, is_active)
+	if wants_third_person then
+		if previous ~= true or is_active == false then
+			return "push"
+		end
+
+		return "none"
+	end
+
+	if previous == false then
+		return "none"
+	end
+
+	return "clear"
+end
+
+function CameraMode.perspectives()
+	local mod = get_mod and get_mod("Perspectives")
+	if not mod or not mod.autoswitch or not mod.clear_reason then
+		return nil
+	end
+
+	return mod
+end
+
+function CameraMode.cooperate(wants_third_person)
+	local perspectives = CameraMode.perspectives()
+	if not perspectives then
+		return false
+	end
+
+	local is_active = nil
+	if wants_third_person and perspectives.is_requesting_third_person then
+		local ok, requesting = pcall(perspectives.is_requesting_third_person)
+		if ok then
+			is_active = requesting and true or false
+		end
+	end
+
+	local action = CameraMode.cooperation_action(perspectives_state, wants_third_person, is_active)
+	if action == "none" then
+		return true
+	end
+
+	perspectives_state = wants_third_person
+
+	if action == "push" then
+		perspectives.autoswitch(CameraMode.PERSPECTIVES_REASON, true, true)
+	else
+		perspectives.clear_reason(CameraMode.PERSPECTIVES_REASON)
+	end
+
+	return true
+end
+
+function CameraMode.spectating(mod, Settings)
+	if not mod or not mod:is_enabled() then
+		return false
+	end
+
+	local values = Settings and Settings.values or {}
+	if not values.third_person_spectate then
+		return false
+	end
+
+	local handler = CameraMode.live_handler()
+
+	return handler ~= nil and handler._mode == OBSERVER and handler._camera_follow_unit ~= nil
+end
+
 local warned_missing_field = false
 
 function CameraMode.install(mod, Settings)
@@ -90,6 +168,10 @@ function CameraMode.install_camera_tree(mod, Settings)
 
 	mod:hook(CLASS.PlayerHuskCameraExtension, "camera_tree_node", function(func, self)
 		local tree, node, object = func(self)
+
+		if CameraMode.perspectives() then
+			return tree, node, object
+		end
 
 		if tree == FIRST_PERSON and should_use_third_person(mod, Settings, self) then
 			tree = THIRD_PERSON

@@ -9,6 +9,7 @@ _G.CLASS = _G.CLASS or {}
 _G.CLASS.CameraHandler = _G.CLASS.CameraHandler or {}
 _G.CLASS.PlayerHuskCameraExtension = _G.CLASS.PlayerHuskCameraExtension or {}
 _G.CLASS.HudElementWorldMarkers = _G.CLASS.HudElementWorldMarkers or {}
+_G.CLASS.HudElementSpectatorText = _G.CLASS.HudElementSpectatorText or {}
 
 -- Stub Managers so CameraMode.live_handler and build_context can work.
 _G.Managers = _G.Managers or {}

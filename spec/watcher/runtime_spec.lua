@@ -923,4 +923,68 @@ return function()
 		t.falsy(entry.delete_attempts,
 			"an entry still in use must start its next teardown with a full retry budget")
 	end)
+
+	t.suite("Watcher runtime: orbit radius is per target")
+
+	t.it("a skull keeps its distance when you switch who YOU are spectating", function()
+		-- camera measured against an ogryn, then against a human: the ogryn's skull must not move
+		local from_ogryn = Runtime.radius_for(3.0, 2.2, 2.2)
+		local from_human = Runtime.radius_for(2.25, 1.65, 2.2)
+		t.near(from_ogryn, from_human, 0.0001,
+			"the same ogryn target must orbit at the same radius regardless of who you spectate")
+	end)
+
+	t.it("a bigger target is orbited wider", function()
+		local human = Runtime.radius_for(2.0, 1.65, 1.65)
+		local ogryn = Runtime.radius_for(2.0, 1.65, 2.2)
+		t.truthy(ogryn > human, "an ogryn needs a wider orbit than a human")
+		t.near(ogryn / human, 2.2 / 1.65, 0.0001, "and it must scale with body height")
+	end)
+
+	t.it("measuring against a human leaves a human target unchanged", function()
+		t.near(Runtime.radius_for(2.0, 1.65, 1.65), 2.0, 0.0001,
+			"the common case must pass the camera derived radius straight through")
+	end)
+
+	t.it("unknown heights fall back to human rather than collapsing the orbit", function()
+		t.near(Runtime.radius_for(2.0, nil, nil), 2.0, 0.0001, "no breed data must not move the skull")
+		t.near(Runtime.radius_for(2.0, 0, 0), 2.0, 0.0001, "zero heights must not divide by zero")
+		t.near(Runtime.radius_for(2.0, "tall", "short"), 2.0, 0.0001, "non numbers must not throw")
+	end)
+
+	t.it("a nil or zero base radius is passed through untouched", function()
+		t.eq(Runtime.radius_for(nil, 1.65, 2.2), nil, "nothing to scale")
+		t.eq(Runtime.radius_for(0, 1.65, 2.2), 0, "zero stays zero")
+	end)
+
+	t.it("two skulls on differently sized targets get different radii in one frame", function()
+		local spawner = engine.make_spawner()
+		engine.place_unit("ogryn", 0, 0, 0)
+		engine.place_unit("human", 20, 0, 0)
+		local log = {}
+		local watchers = {
+			{ account_id = "a", watching = "acct-ogryn" },
+			{ account_id = "b", watching = "acct-human" },
+		}
+		local ctx = ctx_for(watchers, spawner, log)
+		ctx.body_height_for = function(u) return u == "ogryn" and 2.2 or 1.65 end
+		Runtime._set_unit_lookup(function(w)
+			return w == "acct-ogryn" and "ogryn" or "human"
+		end)
+
+		for _ = 1, 120 do
+			Runtime.update(1 / 60, ctx)
+		end
+
+		local reach = {}
+		for _, e in pairs(ctx.live) do
+			local base = e.watching == "acct-ogryn" and 0 or 20
+			local dx, dy = e.px - base, e.py
+			reach[e.watching] = math.sqrt(dx * dx + dy * dy)
+		end
+
+		t.truthy(reach["acct-ogryn"] and reach["acct-human"], "both skulls must be placed")
+		t.truthy(reach["acct-ogryn"] > reach["acct-human"],
+			"the ogryn's skull must sit wider than the human's in the same frame")
+	end)
 end

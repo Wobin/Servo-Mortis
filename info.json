@@ -1,7 +1,7 @@
 {
 	"name": "Servo Mortis",
 	"author": "Wobin",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"nexusId": "1153",
 	"source": "https://github.com/Wobin/Servo-Mortis",
 	"description": "Spectate the living in third person when you die, and show a servo skull orbiting whoever each dead teammate is watching",
