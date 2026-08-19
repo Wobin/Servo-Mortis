@@ -8,6 +8,8 @@ return {
 			mod_localization = "Servo Mortis/scripts/mods/Servo Mortis/Servo Mortis_localization",
 		})
 	end,
-	version = "1.1.0",
+	load_after = {
+		"Vox Manifold",
+	},
 	packages = {},
 }

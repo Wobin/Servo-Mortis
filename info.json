@@ -1,13 +1,19 @@
 {
 	"name": "Servo Mortis",
-	"author": "Wobin",
-	"version": "1.1.0",
-	"nexusId": "1153",
-	"source": "https://github.com/Wobin/Servo-Mortis",
 	"description": "Spectate the living in third person when you die, and show a servo skull orbiting whoever each dead teammate is watching",
+	"version": "1.2.1",
+	"author": "Wobin",
+	"homepage": "https://www.nexusmods.com/warhammer40kdarktide/mods/1153",
+	"source": "https://github.com/Wobin/Servo-Mortis",
+	"funding": {
+		"kofi": "https://ko-fi.com/wobin_dwonderdog"
+	},
+	"nexusId": "1153",
 	"order": {
 		"require": [],
-		"this_after": ["Vox Manifold"],
+		"this_after": [
+			"Vox Manifold"
+		],
 		"this_before": []
 	}
 }

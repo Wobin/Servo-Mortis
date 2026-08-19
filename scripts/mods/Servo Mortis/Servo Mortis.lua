@@ -1,12 +1,11 @@
 --[[
 	Name: Servo Mortis
 	Author: Wobin
-	Date: 12/08/2026
-	Version: 1.1.0
+	Date: 20/08/2026
 ]]--
 
 local mod = get_mod("Servo Mortis")
-mod.version = "1.1.0"
+mod.version = mod.get_metadata and mod:get_metadata("version") or "unknown"
 
 local Settings = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/settings")
 local FollowTargets = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/follow_targets")
@@ -24,6 +23,11 @@ mod.on_setting_changed = function(id)
 	if Settings.on_changed(mod, id) then
 		CameraMode.apply_to_live_handler(mod, Settings)
 	end
+end
+
+mod.on_settings_reset = function()
+	Settings.refresh(mod)
+	CameraMode.apply_to_live_handler(mod, Settings)
 end
 
 mod.spectate_previous = function()
