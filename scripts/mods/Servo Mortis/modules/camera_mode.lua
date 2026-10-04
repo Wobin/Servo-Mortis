@@ -131,6 +131,34 @@ end
 
 local warned_missing_field = false
 
+local defer_observing_to_vanilla = false
+
+function CameraMode.observing_repair(func, self)
+	if not self then
+		return func(self)
+	end
+
+	if defer_observing_to_vanilla then
+		return func(self)
+	end
+
+	return self._mode == OBSERVER
+end
+
+function CameraMode.with_vanilla_observing(func, self, player_orientation)
+	defer_observing_to_vanilla = true
+
+	local ok, yaw, pitch, roll = pcall(func, self, player_orientation)
+
+	defer_observing_to_vanilla = false
+
+	if not ok then
+		error(yaw, 0)
+	end
+
+	return yaw, pitch, roll
+end
+
 function CameraMode.install(mod, Settings)
 	if not CLASS or not CLASS.CameraHandler then
 		mod:error("Servo Mortis: CLASS.CameraHandler not found, third person spectating is disabled")
@@ -151,10 +179,11 @@ function CameraMode.install(mod, Settings)
 			end
 		end)
 
-		mod:hook(CLASS.CameraHandler, "is_observing", function(func, self)
-			if not self then return func(self) end
-			return self._mode == OBSERVER
-		end)
+		mod:hook(CLASS.CameraHandler, "is_observing", CameraMode.observing_repair)
+
+		if CLASS.CameraHandler._camera_root_orientation then
+			mod:hook(CLASS.CameraHandler, "_camera_root_orientation", CameraMode.with_vanilla_observing)
+		end
 	end
 
 	CameraMode.install_camera_tree(mod, Settings)

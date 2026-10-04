@@ -129,7 +129,16 @@ function Skulls.ensure_package(mod)
 	return all_loaded
 end
 
-function Skulls.release(mod)
+function Skulls.handle_count()
+	local count = 0
+	for _ in pairs(handles) do
+		count = count + 1
+	end
+
+	return count
+end
+
+function Skulls.release()
 	local package_manager = Managers and Managers.package
 	for path, handle in pairs(handles) do
 		if handle and package_manager and package_manager.release then

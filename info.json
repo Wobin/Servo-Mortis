@@ -1,7 +1,7 @@
 {
 	"name": "Servo Mortis",
 	"description": "Spectate the living in third person when you die, and show a servo skull orbiting whoever each dead teammate is watching",
-	"version": "1.2.1",
+	"version": "1.2.0",
 	"author": "Wobin",
 	"homepage": "https://www.nexusmods.com/warhammer40kdarktide/mods/1153",
 	"source": "https://github.com/Wobin/Servo-Mortis",

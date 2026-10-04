@@ -23,6 +23,7 @@ Nameplate.TEMPLATE_NAME = "servo_mortis_watcher"
 
 local warned = false
 local hook_installed = false
+local require_hook_installed = false
 
 function Nameplate._reset_warning()
 	warned = false
@@ -30,6 +31,38 @@ end
 
 function Nameplate._reset_hook_state()
 	hook_installed = false
+	require_hook_installed = false
+end
+
+Nameplate.SPECTATOR_ELEMENT_LIST = "scripts/ui/hud/hud_elements_spectator"
+
+Nameplate.SPECTATOR_MARKER_ELEMENT = {
+	class_name = "HudElementWorldMarkers",
+	filename = "scripts/ui/hud/elements/world_markers/hud_element_world_markers",
+	package = "packages/ui/hud/world_markers/world_markers",
+	use_hud_scale = true,
+	visibility_groups = {
+		"dead",
+		"alive",
+		"communication_wheel",
+	},
+}
+
+function Nameplate.ensure_spectator_element(elements)
+	if type(elements) ~= "table" then
+		return false
+	end
+
+	for i = 1, #elements do
+		local entry = elements[i]
+		if type(entry) == "table" and entry.class_name == "HudElementWorldMarkers" then
+			return false
+		end
+	end
+
+	elements[#elements + 1] = Nameplate.SPECTATOR_MARKER_ELEMENT
+
+	return true
 end
 
 local ui_widget = nil
@@ -116,6 +149,13 @@ function Nameplate.install(mod, Settings)
 	installed_settings = Settings
 	installed_mod = mod
 
+	if not require_hook_installed and mod.hook_require then
+		require_hook_installed = true
+		mod:hook_require(Nameplate.SPECTATOR_ELEMENT_LIST, function(elements)
+			Nameplate.ensure_spectator_element(elements)
+		end)
+	end
+
 	if not CLASS or not CLASS.HudElementWorldMarkers then
 		if not warned then
 			warned = true
@@ -135,9 +175,40 @@ function Nameplate.install(mod, Settings)
 	end
 end
 
+Nameplate.HUDS = { "_spectator_hud", "_hud" }
+
+function Nameplate.hud_element(class_name)
+	local ui = Managers and Managers.ui
+	if not ui then
+		return nil
+	end
+
+	for i = 1, #Nameplate.HUDS do
+		local hud = ui[Nameplate.HUDS[i]]
+		if hud and hud.element then
+			local ok, element = pcall(function() return hud:element(class_name) end)
+			if ok and element then
+				return element
+			end
+		end
+	end
+
+	return nil
+end
+
+function Nameplate.refresh()
+	local element = Nameplate.hud_element("HudElementWorldMarkers")
+	if not element or not element._marker_templates then
+		return false
+	end
+
+	element._marker_templates[Nameplate.TEMPLATE_NAME] = Nameplate.build_template(configured_distance())
+
+	return true
+end
+
 local function ensure_template()
-	local hud = Managers.ui and Managers.ui._hud
-	local element = hud and hud:element("HudElementWorldMarkers")
+	local element = Nameplate.hud_element("HudElementWorldMarkers")
 	if not element then
 		return false
 	end
@@ -157,13 +228,13 @@ function Nameplate.add(name, colour, position)
 	end
 
 	local id = nil
-	local ok, err = pcall(function()
+	local triggered, err = pcall(function()
 		Managers.event:trigger("add_world_marker_position", Nameplate.TEMPLATE_NAME, position,
 			function(marker_id) id = marker_id end,
 			{ name = name, colour = colour })
 	end)
 
-	if not ok then
+	if not triggered then
 		Nameplate.report("could not create a watcher name marker: " .. tostring(err))
 	end
 
@@ -176,8 +247,7 @@ function Nameplate.move(id, position)
 	end
 	local found = false
 	local ok = pcall(function()
-		local hud = Managers.ui and Managers.ui._hud
-		local element = hud and hud:element("HudElementWorldMarkers")
+		local element = Nameplate.hud_element("HudElementWorldMarkers")
 		local marker = element and element._markers_by_id and element._markers_by_id[id]
 		if marker and marker.world_position then
 			Vector3Box.store(marker.world_position, position)

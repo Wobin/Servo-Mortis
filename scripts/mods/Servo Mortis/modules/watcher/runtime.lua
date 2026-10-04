@@ -24,13 +24,20 @@ Runtime.FACING_TURN_RATE = 1.6
 Runtime.TRAVEL_MIN_SPEED_SQ = 0.25
 Runtime.CUT_DISTANCE = 25.0
 Runtime.MAX_DELETE_ATTEMPTS = 3
+Runtime.MAX_REPORTS = 64
 
 local reporter = nil
 local reported = {}
+local report_count = 0
 
 function Runtime._set_reporter(fn)
 	reporter = fn
 	reported = {}
+	report_count = 0
+end
+
+function Runtime.report_count()
+	return report_count
 end
 
 function Runtime.report(message)
@@ -38,7 +45,12 @@ function Runtime.report(message)
 		return false
 	end
 
+	if report_count >= Runtime.MAX_REPORTS then
+		return false
+	end
+
 	reported[message] = true
+	report_count = report_count + 1
 
 	if reporter then
 		reporter(message)
@@ -186,7 +198,20 @@ end
 
 function Runtime.despawn_all(live, Nameplate)
 	for account_id in pairs(live) do
-		Runtime.despawn(live, account_id, Nameplate)
+		for _ = 1, Runtime.MAX_DELETE_ATTEMPTS do
+			if Runtime.despawn(live, account_id, Nameplate) then
+				break
+			end
+		end
+	end
+end
+
+function Runtime.forget_markers(live, Nameplate)
+	for _, entry in pairs(live) do
+		if entry.marker_id then
+			Nameplate.remove(entry.marker_id)
+			entry.marker_id = nil
+		end
 	end
 end
 
@@ -491,6 +516,11 @@ function Runtime.update(dt, ctx)
 	end
 
 	local watchers = ctx.watchers or Presence.watchers()
+
+	if #watchers == 0 and next(live) == nil then
+		return
+	end
+
 	local ids = {}
 	for i = 1, #watchers do
 		ids[i] = watchers[i].account_id
@@ -529,6 +559,11 @@ function Runtime.update(dt, ctx)
 		if not target_unit or not ALIVE[target_unit] then
 			Runtime.despawn(live, account_id, Nameplate)
 		else
+			local existing = live[account_id]
+			if existing and (not existing.unit or not Unit.alive(existing.unit)) then
+				Runtime.despawn(live, account_id, Nameplate)
+			end
+
 			local slot = Runtime.slot_for_watcher(account_id, ids)
 			local entry = ensure_entry(live, watcher, target_unit, slot, spawner, Skulls)
 

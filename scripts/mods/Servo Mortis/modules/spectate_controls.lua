@@ -20,6 +20,9 @@ local hint_device = nil
 local hint_built = false
 local hint_attempts = 0
 local hint_attempt_device = nil
+local binding = nil
+local binding_device = nil
+local binding_resolver = nil
 
 Controls.MOUSE_BUTTON_LABELS = {
 	left = "LMB",
@@ -53,6 +56,42 @@ function Controls.button_label(locale_name, raw_name, category)
 	return "[" .. raw_name:upper() .. "]"
 end
 
+function Controls._set_binding_resolver(fn)
+	binding_resolver = fn
+end
+
+local function gamepad_in_use()
+	local input = Managers and Managers.input
+	if not input or not input.device_in_use then
+		return false
+	end
+
+	local ok, result = pcall(function() return input:device_in_use("gamepad") end)
+	if not ok or not result then
+		return false
+	end
+
+	return true
+end
+
+local function manager_using_input(manager)
+	if not manager or not manager.using_input then
+		return false
+	end
+
+	local ok, result = pcall(function() return manager:using_input() end)
+
+	return (ok and result) and true or false
+end
+
+function Controls.input_blocked()
+	if not Managers then
+		return false
+	end
+
+	return manager_using_input(Managers.imgui) or manager_using_input(Managers.ui)
+end
+
 local function device_pressed(device, name)
 	if not device or not device.pressed or not device.button_index then
 		return false
@@ -66,7 +105,37 @@ local function device_pressed(device, name)
 	return device.pressed(index) == true
 end
 
+function Controls.binding_for(gamepad)
+	if binding ~= nil and binding_device == gamepad then
+		return binding
+	end
+
+	local resolver = binding_resolver or Controls.resolve_binding
+	local resolved = resolver(Controls.previous_hint_alias(gamepad), gamepad)
+
+	binding = resolved or false
+	binding_device = gamepad
+
+	return binding
+end
+
 function Controls.previous_pressed(mouse, pad)
+	if Controls.input_blocked() then
+		return false
+	end
+
+	local bound = Controls.binding_for(gamepad_in_use())
+
+	if bound then
+		if bound.category == "mouse" then
+			return device_pressed(mouse, bound.name)
+		end
+
+		if bound.category == "gamepad" then
+			return device_pressed(pad, bound.name)
+		end
+	end
+
 	return device_pressed(mouse, Controls.PREVIOUS_MOUSE_BUTTON)
 		or device_pressed(pad, Controls.PREVIOUS_PAD_BUTTON)
 end
@@ -118,6 +187,8 @@ function Controls.forget_hint()
 	hint_built = false
 	hint_attempts = 0
 	hint_attempt_device = nil
+	binding = nil
+	binding_device = nil
 end
 
 function Controls.hint_for(mod, gamepad)
@@ -149,6 +220,47 @@ function Controls.hint_for(mod, gamepad)
 end
 
 local KEYBOARD_DEVICES = { "keyboard", "mouse" }
+local GAMEPAD_DEVICES = { "gamepad" }
+
+function Controls.resolve_binding(alias_key, gamepad)
+	if not InputUtils then
+		return nil
+	end
+
+	local input = Managers and Managers.input
+	if not input or not input.alias_object then
+		return nil
+	end
+
+	local devices = KEYBOARD_DEVICES
+	if gamepad then
+		devices = GAMEPAD_DEVICES
+	end
+
+	local ok, resolved = pcall(function()
+		local alias = input:alias_object("Ingame")
+		local key_info = alias and alias:get_keys_for_alias(alias_key, devices)
+		local main = key_info and key_info.main
+		if not main then
+			return nil
+		end
+
+		local device_type = InputUtils.key_device_type(main)
+		local device = device_type and InputUtils.get_first_device_of_type(device_type)
+		local index = device and InputUtils.button_index(main, device, device_type)
+		if not index then
+			return nil
+		end
+
+		return { category = device.category(), name = device.button_name(index) }
+	end)
+
+	if not ok or not resolved then
+		return nil
+	end
+
+	return resolved
+end
 
 function Controls.compose_keystring(keystring, enablers, disablers, label_for)
 	if type(enablers) == "table" then

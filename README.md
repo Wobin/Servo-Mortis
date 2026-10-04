@@ -20,14 +20,6 @@ presence. Without it the mod still works, you just will not see other players' s
 - Darktide Mod Framework
 - Vox Manifold (optional, needed only for skulls shared between players)
 
-## Development
-
-The mod has an offline test suite that runs without the game:
-
-```
-luajit spec/run_all.lua
-```
-
 ## Author
 
 Wobin

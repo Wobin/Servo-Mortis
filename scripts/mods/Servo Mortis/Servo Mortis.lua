@@ -1,7 +1,7 @@
 --[[
 	Name: Servo Mortis
 	Author: Wobin
-	Date: 20/08/2026
+	Date: 05/10/2026
 ]]--
 
 local mod = get_mod("Servo Mortis")
@@ -18,17 +18,6 @@ local Nameplate = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/
 local Runtime = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/watcher/runtime")
 local TestMode = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/watcher/test_mode")
 local Watching = mod:io_dofile("Servo Mortis/scripts/mods/Servo Mortis/modules/watcher/watching")
-
-mod.on_setting_changed = function(id)
-	if Settings.on_changed(mod, id) then
-		CameraMode.apply_to_live_handler(mod, Settings)
-	end
-end
-
-mod.on_settings_reset = function()
-	Settings.refresh(mod)
-	CameraMode.apply_to_live_handler(mod, Settings)
-end
 
 mod.spectate_previous = function()
 	if not mod:is_enabled() then
@@ -140,6 +129,21 @@ local watcher_ctx = {
 	time = 0,
 }
 
+mod.on_setting_changed = function(id)
+	if Settings.on_changed(mod, id) then
+		CameraMode.apply_to_live_handler(mod, Settings)
+
+		if id == "nameplate_distance" and Nameplate.refresh() then
+			Runtime.forget_markers(watcher_ctx.live, Nameplate)
+		end
+	end
+end
+
+mod.on_settings_reset = function()
+	Settings.refresh(mod)
+	CameraMode.apply_to_live_handler(mod, Settings)
+end
+
 local test_units_by_id = {}
 
 local function test_unit_lookup(id)
@@ -203,6 +207,7 @@ end
 mod.on_disabled = function()
 	CameraMode.apply(CameraMode.live_handler(), { values = { third_person_spectate = false } })
 	Runtime.despawn_all(watcher_ctx.live, Nameplate)
+	Skulls.release()
 	TestMode.reset()
 	CameraMode.cooperate(false)
 	CameraMode._reset_cooperation()
@@ -228,5 +233,5 @@ mod.on_unload = function()
 	SpectateControls.forget_hint()
 	SpectateControls.restore_hint()
 	Presence.uninstall()
-	Skulls.release(mod)
+	Skulls.release()
 end
